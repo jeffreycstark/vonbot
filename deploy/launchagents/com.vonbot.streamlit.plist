@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.vonbot.streamlit</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/jeffreystark/Development/key/vonbot/.venv/bin/streamlit</string>
+        <string>run</string>
+        <string>app.py</string>
+        <string>--server.port</string>
+        <string>8501</string>
+        <string>--server.address</string>
+        <string>127.0.0.1</string>
+        <string>--server.headless</string>
+        <string>true</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/jeffreystark/Development/key/vonbot</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/jeffreystark/Development/key/vonbot/logs/streamlit.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/jeffreystark/Development/key/vonbot/logs/streamlit.err.log</string>
+</dict>
+</plist>

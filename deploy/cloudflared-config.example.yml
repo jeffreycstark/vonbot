@@ -1,0 +1,13 @@
+# Cloudflare Tunnel config for vonbot.
+# Install location on the Mac Mini: ~/.cloudflared/config.yml
+#
+# Replace <TUNNEL-ID> with the id printed by `cloudflared tunnel create vonbot`.
+# The credentials JSON it generates is a SECRET — never commit it.
+
+tunnel: <TUNNEL-ID>
+credentials-file: /Users/jeffreystark/.cloudflared/<TUNNEL-ID>.json
+
+ingress:
+  - hostname: vonbot.pucsr.edu.kh
+    service: http://localhost:8501
+  - service: http_status:404
