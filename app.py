@@ -45,7 +45,7 @@ def login_page():
         with st.form("login_form"):
             username = st.text_input("Username")
             password = st.text_input("Password", type="password")
-            submit = st.form_submit_button("Login", type="primary", use_container_width=True)
+            submit = st.form_submit_button("Login", type="primary", width="stretch")
 
             if submit:
                 admin_user = os.getenv("ADMIN_USERNAME", "admin")
@@ -128,7 +128,7 @@ def render_matrix_issues(issues):
         )
         st.dataframe(
             unmapped_df[["StudentId", "Name", "Major", "Prefix"]],
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
         )
         st.download_button(
@@ -169,7 +169,7 @@ def main():
     with st.sidebar:
         # Show logged in user and logout button
         st.caption(f"👤 Logged in as: **{st.session_state.get('username', 'Admin')}**")
-        if st.button("🚪 Logout", use_container_width=True):
+        if st.button("🚪 Logout", width="stretch"):
             st.session_state["authenticated"] = False
             st.session_state["username"] = None
             st.rerun()
@@ -271,7 +271,7 @@ def main():
                         st.rerun()
         else:
             st.caption("No backups yet")
-            if st.button("📸 Create First Snapshot", key="create_first_backup", use_container_width=True):
+            if st.button("📸 Create First Snapshot", key="create_first_backup", width="stretch"):
                 create_backup(st.session_state)
                 st.success("First backup created!")
                 st.rerun()
@@ -366,7 +366,7 @@ def render_student_selection_tab():
             "students_df"].empty:
             st.dataframe(
                 st.session_state["students_df"],
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
                 column_config={
                     "StudentId": "ID",
@@ -458,7 +458,7 @@ def render_course_matching_tab():
 
             st.dataframe(
                 display_df,
-                use_container_width=True,
+                width="stretch",
                 height=min(len(display_df) * 35 + 38, 600),  # Dynamic height, max 600px
                 column_config={
                     "Course Display": "Course",
@@ -508,13 +508,13 @@ def render_course_matching_tab():
                 st.write(f"**Demand range:** {nonzero_demand['Demand'].min()} to {nonzero_demand['Demand'].max()}")
 
             st.write("**All courses sorted by demand (lowest first):**")
-            st.dataframe(all_demands_df, use_container_width=True, height=300)
+            st.dataframe(all_demands_df, width="stretch", height=300)
 
             # Major distribution (on copy, not original)
             st.write("**Student count by major prefix:**")
             debug_df["MajorPrefix"] = debug_df["Major"].apply(lambda x: x.split("-")[0] if "-" in str(x) else str(x)[:3])
             major_counts = debug_df["MajorPrefix"].value_counts()
-            st.dataframe(major_counts, use_container_width=True)
+            st.dataframe(major_counts, width="stretch")
 
 
 def render_class_rosters_tab():
@@ -605,7 +605,7 @@ def render_class_rosters_tab():
                 display_df,
                 on_select="rerun",
                 selection_mode="multi-row",
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
             )
 
@@ -636,7 +636,7 @@ def render_class_rosters_tab():
 
         if current_roster:
             roster_df = pd.DataFrame(current_roster)
-            st.dataframe(roster_df, use_container_width=True, hide_index=True)
+            st.dataframe(roster_df, width="stretch", hide_index=True)
 
             col1, col2 = st.columns(2)
             with col1:
@@ -841,7 +841,7 @@ def render_manage_rosters_tab():
                 # Display the roster
                 st.dataframe(
                     roster_df[["StudentId", "Name", "Major", "Cohort"]],
-                    use_container_width=True,
+                    width="stretch",
                     hide_index=True,
                 )
 
@@ -997,7 +997,7 @@ def render_schedule_optimization_tab():
                     }
                     for c, s in st.session_state["offered_courses"].items()
                 ]
-                st.dataframe(pd.DataFrame(schedule_data), use_container_width=True, hide_index=True)
+                st.dataframe(pd.DataFrame(schedule_data), width="stretch", hide_index=True)
 
 
 def render_download_rosters_tab():
@@ -1068,7 +1068,7 @@ def render_download_rosters_tab():
 
         if preview_rows:
             preview_df = pd.DataFrame(preview_rows)
-            st.dataframe(preview_df, use_container_width=True, hide_index=True)
+            st.dataframe(preview_df, width="stretch", hide_index=True)
 
     st.divider()
 
@@ -1165,7 +1165,7 @@ def render_download_rosters_tab():
             file_name=f"student_enrollments_{timestamp}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             type="primary",
-            use_container_width=True
+            width="stretch"
         )
 
     else:  # CSV format
@@ -1180,7 +1180,7 @@ def render_download_rosters_tab():
             file_name=f"student_enrollments_{timestamp}.csv",
             mime="text/csv",
             type="primary",
-            use_container_width=True
+            width="stretch"
         )
 
     st.divider()
@@ -1337,7 +1337,7 @@ Please introduce yourself to the group!"""
 
             col1, col2 = st.columns(2)
             with col1:
-                if st.button(f"📤 Create Classroom", key=f"create_tg_{course}", use_container_width=True):
+                if st.button(f"📤 Create Classroom", key=f"create_tg_{course}", width="stretch"):
                     if telegram_chat_id:
                         # TODO: Implement Telegram classroom creation
                         st.info("🚧 Creating Telegram classroom...")
@@ -1351,10 +1351,10 @@ Please introduce yourself to the group!"""
                         st.error("⚠️ Please configure Telegram Bot Chat ID first")
 
             with col2:
-                if st.button(f"📋 View Student List", key=f"view_tg_{course}", use_container_width=True):
+                if st.button(f"📋 View Student List", key=f"view_tg_{course}", width="stretch"):
                     if students:
                         student_df = pd.DataFrame(students)
-                        st.dataframe(student_df[["Name", "Email"]], use_container_width=True)
+                        st.dataframe(student_df[["Name", "Email"]], width="stretch")
 
     st.divider()
 
@@ -1433,7 +1433,7 @@ def render_student_transcript_tab():
                             # Display the transcript
                             st.dataframe(
                                 transcript_df,
-                                use_container_width=True,
+                                width="stretch",
                                 hide_index=True,
                                 height=min(len(transcript_df) * 35 + 38, 600)
                             )

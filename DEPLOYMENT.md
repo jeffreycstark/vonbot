@@ -74,7 +74,7 @@ substituting the real `<tunnel-id>`.
 
 ## 3. Auto-start services (launchd)
 
-Three user **LaunchAgents** keep everything running and restart it on drop. Templates are in
+Four user **LaunchAgents** keep everything running and restart it on drop. Templates are in
 [`deploy/launchagents/`](deploy/launchagents/) — they assume user `jeffreystark` and this repo
 path; edit if either differs.
 
@@ -82,11 +82,11 @@ path; edit if either differs.
 cp deploy/launchagents/com.vonbot.*.plist ~/Library/LaunchAgents/
 
 UID_NUM=$(id -u)
-for svc in com.vonbot.streamlit com.vonbot.cloudflared com.vonbot.vpn-keepalive; do
+for svc in com.vonbot.streamlit com.vonbot.cloudflared com.vonbot.vpn-keepalive com.vonbot.logrotate; do
   launchctl bootstrap gui/$UID_NUM ~/Library/LaunchAgents/$svc.plist
   launchctl enable    gui/$UID_NUM/$svc
 done
-launchctl list | grep vonbot     # all three should be listed
+launchctl list | grep vonbot     # all four should be listed
 ```
 
 | Agent | Does |
@@ -94,6 +94,23 @@ launchctl list | grep vonbot     # all three should be listed
 | `com.vonbot.streamlit`     | runs `.venv/bin/streamlit run app.py` on `127.0.0.1:8501` (KeepAlive) |
 | `com.vonbot.cloudflared`   | runs `cloudflared tunnel run vonbot` (KeepAlive) |
 | `com.vonbot.vpn-keepalive` | runs `scripts/vpn-keepalive.sh` at login + every 60s; reconnects "School VPN" if down |
+| `com.vonbot.logrotate`     | runs `scripts/rotate-logs.sh` daily at 03:30; copy-truncates any log over 10 MB, keeps 5 gzipped archives |
+
+**Verify all four are actually loaded** — a missing agent fails silently. `com.vonbot.vpn-keepalive`
+was absent from `~/Library/LaunchAgents/` between 2026-06-16 and 2026-09-10, leaving the VPN with no
+auto-reconnect for three months:
+
+```bash
+launchctl list | grep vonbot     # expect 4 lines
+```
+
+### Why log rotation is copy-truncate, not rename
+
+launchd holds each log open as the service's stdout/stderr (`StandardOutPath`/`StandardErrorPath`).
+A rename-based rotation — `newsyslog`, or `logrotate` without `copytruncate` — would leave the
+running process writing to the orphaned inode: the archive would keep growing while the new file
+stayed empty. `scripts/rotate-logs.sh` gzips a copy and then truncates the file **in place**,
+preserving the inode so the process keeps appending correctly. It needs no `sudo`.
 
 ## 4. Edge security — WAF IP allowlist
 
@@ -127,6 +144,12 @@ launchctl kickstart -k gui/$(id -u)/com.vonbot.streamlit
 
 # tail logs
 tail -f logs/streamlit.err.log logs/cloudflared.err.log logs/vpn-keepalive.log
+
+# rotate logs by hand (normally daily at 03:30 via com.vonbot.logrotate)
+bash scripts/rotate-logs.sh
+
+# test VPN failover: drop it and confirm the keepalive restores it (~2 min outage)
+scutil --nc stop "School VPN"; scutil --nc status "School VPN" | head -1
 
 # check public health
 curl -s -o /dev/null -w "%{http_code}\n" https://vonbot.pucsr.edu.kh/_stcore/health
