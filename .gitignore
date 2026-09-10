@@ -24,3 +24,7 @@ logs/
 # IDE settings
 .idea/
 .ruff_cache/
+
+# Generated data worklists and DB backups (see scripts/normalize_doctor_prefixes.py)
+doctor_column_worklist.csv
+backup_doctor_prefixes_*.csv

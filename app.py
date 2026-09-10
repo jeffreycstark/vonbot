@@ -88,6 +88,57 @@ def save_current_session():
 load_cached_session()
 
 
+def render_matrix_issues(issues):
+    """Show students the needs matrix could not account for.
+
+    These students appear in the matrix with zero required courses, which is
+    indistinguishable from a student who genuinely needs nothing. Surfacing
+    them here stops that from passing as a real result.
+    """
+    if not issues:
+        return
+
+    if issues.get("requirements_missing"):
+        st.error(
+            "Could not load the requirements file. Every student will show zero "
+            "required courses until this is fixed."
+        )
+
+    unmapped = issues.get("unmapped") or []
+    if not unmapped:
+        return
+
+    unmapped_df = pd.DataFrame(unmapped)
+    prefix_counts = (
+        unmapped_df.groupby("Prefix").size().sort_values(ascending=False)
+    )
+    prefix_summary = ", ".join(
+        f"{prefix} ({count})" for prefix, count in prefix_counts.items()
+    )
+
+    st.warning(
+        f"**{len(unmapped_df)} students show no required courses because their "
+        f"major code is not in the curriculum file.** Unrecognized prefixes: "
+        f"{prefix_summary}. Their numbers are missing from the demand counts below."
+    )
+    with st.expander(f"Show the {len(unmapped_df)} affected students"):
+        st.caption(
+            "Fix by correcting BatchIDForDoctor for these students, or by adding "
+            "the prefix as a column in the curriculum requirements file."
+        )
+        st.dataframe(
+            unmapped_df[["StudentId", "Name", "Major", "Prefix"]],
+            use_container_width=True,
+            hide_index=True,
+        )
+        st.download_button(
+            "Download as CSV",
+            unmapped_df.to_csv(index=False).encode("utf-8"),
+            file_name="unmapped_students.csv",
+            mime="text/csv",
+        )
+
+
 def remove_student_from_roster(course: str, student_id: str):
     """Remove a student from a specific course roster."""
     if "rosters" in st.session_state and course in st.session_state["rosters"]:
@@ -358,9 +409,10 @@ def render_course_matching_tab():
                     compute_demand_summary
 
                 # Generate needs matrix (uses cached bulk operations internally)
-                needs_df = generate_needs_matrix(students_df,
-                                                 progress_callback=update_progress)
+                needs_df, matrix_issues = generate_needs_matrix(
+                    students_df, progress_callback=update_progress)
                 st.session_state["needs_df"] = needs_df
+                st.session_state["matrix_issues"] = matrix_issues
 
                 # Compute demand summary ONCE here (cached)
                 if not needs_df.empty:
@@ -376,6 +428,8 @@ def render_course_matching_tab():
     # Display results (no recomputation needed - just read from session_state)
     if "needs_df" in st.session_state and "demand_df" in st.session_state:
         demand_df = st.session_state["demand_df"].copy()
+
+        render_matrix_issues(st.session_state.get("matrix_issues"))
 
         st.divider()
         st.subheader("Course Demand & History")

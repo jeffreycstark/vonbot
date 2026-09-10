@@ -16,6 +16,22 @@ from database.connection import db_cursor
 # Load requirements CSV with course codes, major columns, and course titles
 REQUIREMENTS_FILE = "curriculum_requirements2.csv"
 
+# Major codes that exist as columns in the requirements CSV. A student whose
+# BatchIDForDoctor prefix is not in this list has no requirements defined, so
+# they get an empty course list - callers must surface that, not swallow it.
+AVAILABLE_MAJORS = ['BAD', 'THM', 'FIN', 'TES', 'INT']
+
+
+def get_major_prefix(major_code: str) -> str:
+    """Extract the major prefix from a BatchIDForDoctor value ('TES-53E' -> 'TES').
+
+    Returns "" for blank/NULL values, which no longer get filtered out upstream.
+    """
+    if major_code is None or pd.isna(major_code):
+        return ""
+    major_code = str(major_code).strip()
+    return major_code.split("-")[0] if "-" in major_code else major_code[:3]
+
 
 @st.cache_data(ttl=3600)  # Cache for 1 hour
 def load_requirements():
@@ -280,11 +296,10 @@ def get_student_requirements_fast(student_id: str, major_code: str,
         return []
 
     # Extract major prefix from BatchIDForDoctor (e.g., 'TES-53E' -> 'TES')
-    major_prefix = major_code.split("-")[0] if "-" in major_code else major_code[:3]
+    major_prefix = get_major_prefix(major_code)
 
-    # Validate major exists in CSV columns
-    available_majors = ['BAD', 'THM', 'FIN', 'TES', 'INT']
-    if major_prefix not in available_majors:
+    # No requirements column for this major - generate_needs_matrix reports these
+    if major_prefix not in AVAILABLE_MAJORS:
         return []
 
     # Get courses where this major column has 'X'
@@ -324,11 +339,10 @@ def get_student_requirements(student_id: str, major_code: str):
         return []
 
     # Extract major prefix from BatchIDForDoctor (e.g., 'TES-53E' -> 'TES')
-    major_prefix = major_code.split("-")[0] if "-" in major_code else major_code[:3]
+    major_prefix = get_major_prefix(major_code)
 
-    # Validate major exists in CSV columns
-    available_majors = ['BAD', 'THM', 'FIN', 'TES', 'INT']
-    if major_prefix not in available_majors:
+    # No requirements column for this major - generate_needs_matrix reports these
+    if major_prefix not in AVAILABLE_MAJORS:
         return []
 
     # Get courses where this major column has 'X'
@@ -431,13 +445,24 @@ def generate_needs_matrix(students_df: pd.DataFrame, progress_callback=None):
         progress_callback (callable, optional): Function accepting (current_count, total_count, current_student_name).
 
     Returns:
-        pd.DataFrame: Matrix with columns [StudentId, Name, Major, Cohort, LastEnroll, Course1, Course2, ...]
+        tuple: (needs_df, issues) where needs_df is a matrix with columns
+            [StudentId, Name, Major, Cohort, LastEnroll, Course1, Course2, ...]
+            and issues is a dict describing students the matrix could not
+            account for:
+              - "unmapped": list of {StudentId, Name, Major, Prefix} for students
+                whose major prefix has no column in the requirements CSV
+              - "requirements_missing": True if the requirements CSV failed to load,
+                which zeroes out every student
     """
+    issues = {"unmapped": [], "requirements_missing": False}
+
     if students_df.empty:
-        return pd.DataFrame()
+        return pd.DataFrame(), issues
 
     # Pre-load requirements (cached)
     requirements_df = load_requirements()
+    if requirements_df.empty:
+        issues["requirements_missing"] = True
 
     # Pre-load prerequisites (cached)
     prereq_data = load_prerequisites_data()
@@ -456,6 +481,18 @@ def generate_needs_matrix(students_df: pd.DataFrame, progress_callback=None):
 
         if progress_callback:
             progress_callback(i + 1, total_students, student_name)
+
+        # Record students the requirements CSV has no column for. They still
+        # appear in the matrix, but with no courses - without this they would
+        # look identical to a student who simply needs nothing.
+        major_prefix = get_major_prefix(major_code)
+        if major_prefix not in AVAILABLE_MAJORS:
+            issues["unmapped"].append({
+                "StudentId": student_id,
+                "Name": student_name,
+                "Major": major_code,
+                "Prefix": major_prefix or "(blank)",
+            })
 
         # Use fast version with pre-loaded data and prerequisite filtering
         missing_courses = get_student_requirements_fast(
@@ -477,7 +514,7 @@ def generate_needs_matrix(students_df: pd.DataFrame, progress_callback=None):
         all_needs.append(student_data)
 
     if not all_needs:
-        return pd.DataFrame()
+        return pd.DataFrame(), issues
 
     needs_df = pd.DataFrame(all_needs)
 
@@ -487,7 +524,7 @@ def generate_needs_matrix(students_df: pd.DataFrame, progress_callback=None):
 
     needs_df[course_cols] = needs_df[course_cols].fillna(0)
 
-    return needs_df
+    return needs_df, issues
 
 
 @st.cache_data(ttl=300)  # Cache for 5 minutes
