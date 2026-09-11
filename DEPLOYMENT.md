@@ -27,7 +27,9 @@ MSSQL DB  192.168.36.250:1433   (New_PUCDB, SQL Server 2008 R2)
 - `brew install cloudflared`
 - [`uv`](https://docs.astral.sh/uv/) for the Python env
 - The `pucsr.edu.kh` zone on Cloudflare, with account access
-- The L2TP **"School VPN"** configured in System Settings with its password/shared-secret **saved in Keychain** (so it can reconnect headlessly)
+- The L2TP **"School VPN"** configured in System Settings (PPP password saved in the VPN config), and the
+  **`com.pucsr.vpn` watchdog** installed — it is what reconnects the VPN headlessly (see
+  [VPN reconnect](#vpn-reconnect-is-not-vonbots-job))
 
 ## 1. App environment
 
@@ -74,34 +76,61 @@ substituting the real `<tunnel-id>`.
 
 ## 3. Auto-start services (launchd)
 
-Four user **LaunchAgents** keep everything running and restart it on drop. Templates are in
+Three user **LaunchAgents** keep the app running and restart it on drop. Templates are in
 [`deploy/launchagents/`](deploy/launchagents/) — they assume user `jeffreystark` and this repo
 path; edit if either differs.
 
 ```bash
-cp deploy/launchagents/com.vonbot.*.plist ~/Library/LaunchAgents/
-
 UID_NUM=$(id -u)
-for svc in com.vonbot.streamlit com.vonbot.cloudflared com.vonbot.vpn-keepalive com.vonbot.logrotate; do
+for svc in com.vonbot.streamlit com.vonbot.cloudflared com.vonbot.logrotate; do
+  cp deploy/launchagents/$svc.plist ~/Library/LaunchAgents/
   launchctl bootstrap gui/$UID_NUM ~/Library/LaunchAgents/$svc.plist
   launchctl enable    gui/$UID_NUM/$svc
 done
-launchctl list | grep vonbot     # all four should be listed
 ```
 
 | Agent | Does |
 |-------|------|
 | `com.vonbot.streamlit`     | runs `.venv/bin/streamlit run app.py` on `127.0.0.1:8501` (KeepAlive) |
 | `com.vonbot.cloudflared`   | runs `cloudflared tunnel run vonbot` (KeepAlive) |
-| `com.vonbot.vpn-keepalive` | runs `scripts/vpn-keepalive.sh` at login + every 60s; reconnects "School VPN" if down |
 | `com.vonbot.logrotate`     | runs `scripts/rotate-logs.sh` daily at 03:30; copy-truncates any log over 10 MB, keeps 5 gzipped archives |
 
-**Verify all four are actually loaded** — a missing agent fails silently. `com.vonbot.vpn-keepalive`
-was absent from `~/Library/LaunchAgents/` between 2026-06-16 and 2026-09-10, leaving the VPN with no
-auto-reconnect for three months:
+**Verify they are actually loaded** — a missing agent fails silently. Check for the VPN watchdog
+too, since the DB depends on it:
 
 ```bash
-launchctl list | grep vonbot     # expect 4 lines
+launchctl list | grep -E 'vonbot|pucsr\.vpn'   # expect 4 lines: the three above + com.pucsr.vpn
+```
+
+### VPN reconnect is not vonbot's job
+
+Keeping "School VPN" up is handled by one shared watchdog that belongs to the Reconstruction
+project, not this repo: LaunchAgent **`com.pucsr.vpn`** runs `~/bin/vpn-autoconnect.sh` at login
+and every 120 s, and restarts the VPN when it is not Connected/Connecting. genEmail and the nightly
+DB backups depend on it as well.
+
+It works because it passes the IPsec shared secret explicitly —
+`scutil --nc start "School VPN" --secret …`, read from the login keychain (generic password
+`vpn_shared_secret`). The copy of the secret stored in the VPN's own configuration is currently
+unusable, so **every start without `--secret` fails**: a menu-bar Connect click, or any script that
+runs plain `scutil --nc start`. It shows up as a **"shared secret missing"** prompt, and
+`/var/log/ppp.log` logs `L2TP: incorrect user shared secret found`. (Re-entering the secret under
+System Settings → Network → School VPN → Details → Authentication Settings should make plain starts
+work again.)
+
+**Don't bring back `com.vonbot.vpn-keepalive`.** vonbot used to ship its own keepalive agent
+(`scripts/vpn-keepalive.sh`, every 60 s). It called `scutil --nc start` without `--secret`, so all
+its starts failed, and it raced `com.pucsr.vpn`. It was removed for racing the watchdog on
+2026-06-16; the VPN was never left without auto-reconnect, because `com.pucsr.vpn` covered it the
+whole time. An earlier version of this document reinstalled it on 2026-09-10 — its failover test
+passed only because `com.pucsr.vpn` reconnected after both keepalive attempts failed — and at the
+next VPN drop (2026-09-11) it produced the "shared secret missing" prompts until it was disabled
+again. The script and its plist template have since been deleted from this repo. A Mac set up from
+an older checkout may still have it installed; if `launchctl list` shows it:
+
+```bash
+launchctl bootout gui/$(id -u)/com.vonbot.vpn-keepalive
+launchctl disable gui/$(id -u)/com.vonbot.vpn-keepalive   # keeps it from loading at login
 ```
 
 ### Why log rotation is copy-truncate, not rename
@@ -133,8 +162,9 @@ Cloudflare 1020 page before reaching the app. Widen the CIDR if the ISP ever ass
 - `pmset autorestart 1` + `sleep 0` are set, so the Mac powers back on and never sleeps.
 - **FileVault is ON** — after an *unexpected* power loss the Mac halts at the disk-unlock screen and
   needs the password typed **once**, by hand. This is by design and the only manual step.
-- Once unlocked, the user session starts (unlock = login) and all three agents fire. The VPN takes
-  ~60–90s to re-handshake, so DB-backed pages lag ~1–2 min after boot; the app itself loads immediately.
+- Once unlocked, the user session starts (unlock = login) and the vonbot agents and `com.pucsr.vpn`
+  fire. The VPN comes up on the watchdog's first successful attempt (it retries every 120 s), so
+  DB-backed pages can lag a few minutes after boot; the app itself loads immediately.
 
 ## Operations
 
@@ -143,12 +173,13 @@ Cloudflare 1020 page before reaching the app. Widen the CIDR if the ISP ever ass
 launchctl kickstart -k gui/$(id -u)/com.vonbot.streamlit
 
 # tail logs
-tail -f logs/streamlit.err.log logs/cloudflared.err.log logs/vpn-keepalive.log
+tail -f logs/streamlit.err.log logs/cloudflared.err.log
+tail -f ~/bin/vpn-autoconnect.out.log      # VPN watchdog (com.pucsr.vpn): one line per reconnect
 
 # rotate logs by hand (normally daily at 03:30 via com.vonbot.logrotate)
 bash scripts/rotate-logs.sh
 
-# test VPN failover: drop it and confirm the keepalive restores it (~2 min outage)
+# test VPN failover: drop it and confirm com.pucsr.vpn restores it (up to ~2 min outage)
 scutil --nc stop "School VPN"; scutil --nc status "School VPN" | head -1
 
 # check public health
@@ -163,3 +194,5 @@ scutil --nc status "School VPN" | head -1
 - `.env` — secrets (gitignored)
 - `~/.cloudflared/<tunnel-id>.json` — tunnel credentials (secret)
 - Installed copies of the plists under `~/Library/LaunchAgents/`
+- The VPN watchdog `com.pucsr.vpn` (`~/bin/vpn-autoconnect.sh`) and the IPsec shared secret it reads
+  from the login keychain — owned by the Reconstruction project; vonbot depends on them
